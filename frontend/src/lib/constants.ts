@@ -32,11 +32,51 @@ export const CATEGORY_STYLES: Record<string, { color: string; icon: string }> = 
   cat_ai: { color: "#F7DC6F", icon: "cpu" },
   cat_system: { color: "#BB8FCE", icon: "layers" },
   cat_cs: { color: "#85C1E9", icon: "book" },
+  cat_security: { color: "#E74C3C", icon: "shield" },
+  cat_cloud: { color: "#3498DB", icon: "cloud" },
+  cat_data_eng: { color: "#E67E22", icon: "database" },
+  cat_testing: { color: "#2ECC71", icon: "check-circle" },
 };
 
 export const GRAPH_CONFIG = {
   nodeWidth: 200,
-  nodeHeight: 80,
-  rankSep: 80,
-  nodeSep: 40,
+  nodeHeight: 90,
+  rankSep: 140,
+  nodeSep: 60,
+};
+
+// d3-force layout configuration for skill map
+export const FORCE_LAYOUT_CONFIG = {
+  simulationTicks: 120,
+  alphaDecay: 0.02,
+  velocityDecay: 0.3,
+  chargeStrength: -300,
+  pathNodeCharge: -450,
+  linkDistance: 180,
+  linkStrength: 0.3,
+  collisionRadius: 110,
+  clusterStrength: 0.15,
+  clusterRadius: 400,
+  depthStrength: 0.4,
+  depthSpacing: 200,
+  pathCenterStrength: 0.08,
+};
+
+// Category cluster angles (radians) — related categories placed adjacent
+// Arranged clockwise: CS→Programming→Web→Frontend→Backend→DevOps→Cloud→System→Security→Data→DataEng→AI→Mobile→Testing
+export const CATEGORY_CLUSTER_ANGLES: Record<string, number> = {
+  cat_cs: 0,                          // 0°
+  cat_programming: Math.PI * 0.15,    // 27°
+  cat_web: Math.PI * 0.3,             // 54°
+  cat_frontend: Math.PI * 0.45,       // 81°
+  cat_backend: Math.PI * 0.65,        // 117°
+  cat_devops: Math.PI * 0.8,          // 144°
+  cat_cloud: Math.PI * 0.95,          // 171°
+  cat_system: Math.PI * 1.1,          // 198°
+  cat_security: Math.PI * 1.25,       // 225°
+  cat_data: Math.PI * 1.4,            // 252°
+  cat_data_eng: Math.PI * 1.55,       // 279°
+  cat_ai: Math.PI * 1.7,              // 306°
+  cat_mobile: Math.PI * 1.82,         // 328°
+  cat_testing: Math.PI * 1.94,        // 349°
 };

@@ -16,8 +16,9 @@ import { SkillNode } from "./skill-node";
 import { PathEdge } from "./path-edge";
 import { NodeDetailPanel } from "../path/node-detail-panel";
 import { PathHeader } from "../path/path-header";
-import type { DualPath, PathNode as PathNodeType } from "@/types/path";
+import type { DualPath, PathNode as PathNodeType, ProgressMap, ProgressStatus } from "@/types/path";
 import { transformToReactFlow } from "@/lib/graph-transform";
+import { pathApi } from "@/services/path-api";
 
 const nodeTypes = { skillNode: SkillNode };
 const edgeTypes = { pathEdge: PathEdge };
@@ -25,16 +26,18 @@ const edgeTypes = { pathEdge: PathEdge };
 interface SkillGraphProps {
   dualPath: DualPath;
   pathId: string;
+  initialProgress?: ProgressMap;
 }
 
-export function SkillGraph({ dualPath, pathId }: SkillGraphProps) {
+export function SkillGraph({ dualPath, pathId, initialProgress = {} }: SkillGraphProps) {
   const [pathType, setPathType] = useState<"fast_track" | "fundamentals">("fast_track");
   const [selectedNode, setSelectedNode] = useState<PathNodeType | null>(null);
+  const [progress, setProgress] = useState<ProgressMap>(initialProgress);
 
   const currentPath = pathType === "fast_track" ? dualPath.fast_track : dualPath.fundamentals;
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => transformToReactFlow(currentPath, pathType),
+    () => transformToReactFlow(currentPath, pathType, progress, dualPath.shared_graph),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -42,21 +45,53 @@ export function SkillGraph({ dualPath, pathId }: SkillGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  // Update nodes/edges when path type changes
+  // Update nodes/edges when path type or progress changes
   useEffect(() => {
-    const { nodes: newNodes, edges: newEdges } = transformToReactFlow(currentPath, pathType);
+    const { nodes: newNodes, edges: newEdges } = transformToReactFlow(currentPath, pathType, progress, dualPath.shared_graph);
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [pathType, currentPath, setNodes, setEdges]);
+  }, [pathType, currentPath, progress, dualPath.shared_graph, setNodes, setEdges]);
+
+  const handleProgressChange = useCallback(async (nodeId: string, newStatus: ProgressStatus) => {
+    // Optimistic update
+    setProgress((prev) => ({ ...prev, [nodeId]: newStatus }));
+
+    // Update selected node status locally
+    setSelectedNode((prev) =>
+      prev && prev.id === nodeId ? { ...prev, status: newStatus } : prev
+    );
+
+    try {
+      await pathApi.updateProgress(pathId, nodeId, newStatus);
+    } catch {
+      // Revert on failure
+      setProgress((prev) => {
+        const reverted = { ...prev };
+        delete reverted[nodeId];
+        return reverted;
+      });
+    }
+  }, [pathId]);
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    // Ignore background (non-path) nodes
+    if ((node.data as any)?.nodeRole === "background") return;
+
     const pathNode = currentPath.nodes.find((n) => n.id === node.id);
-    setSelectedNode(pathNode || null);
-  }, [currentPath]);
+    if (pathNode) {
+      const effectiveStatus = progress[pathNode.id] || pathNode.status;
+      setSelectedNode({ ...pathNode, status: effectiveStatus });
+    }
+  }, [currentPath, progress]);
 
   const handlePaneClick = useCallback(() => {
     setSelectedNode(null);
   }, []);
+
+  // Count completed nodes for header
+  const completedCount = currentPath.nodes.filter(
+    (n) => progress[n.id] === "completed"
+  ).length;
 
   return (
     <div className="w-full h-screen bg-[#0a0a0f] relative">
@@ -72,6 +107,7 @@ export function SkillGraph({ dualPath, pathId }: SkillGraphProps) {
         pathType={pathType}
         onPathTypeChange={setPathType}
         metadata={currentPath.metadata}
+        completedCount={completedCount}
       />
 
       {/* React Flow */}
@@ -86,7 +122,10 @@ export function SkillGraph({ dualPath, pathId }: SkillGraphProps) {
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView
-          fitViewOptions={{ padding: 0.2 }}
+          fitViewOptions={{
+            padding: 0.3,
+            nodes: nodes.filter((n) => (n.data as Record<string, unknown>)?.isOnPath),
+          }}
           minZoom={0.3}
           maxZoom={1.5}
           proOptions={{ hideAttribution: true }}
@@ -114,6 +153,7 @@ export function SkillGraph({ dualPath, pathId }: SkillGraphProps) {
           node={selectedNode}
           pathId={pathId}
           onClose={() => setSelectedNode(null)}
+          onProgressChange={handleProgressChange}
         />
       )}
     </div>
