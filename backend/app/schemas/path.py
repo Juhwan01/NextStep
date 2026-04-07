@@ -36,8 +36,10 @@ class PathMetadata(BaseModel):
     total_hours: float
     total_nodes: int
     skipped_count: int
+    skipped_skills: list[str] = []  # Names of skills user already knows
     path_type: str
     job_title: str
+    concurrent_groups: list[list[str]] = []  # Groups of skill IDs learnable in parallel
 
 
 class GeneratedPath(BaseModel):

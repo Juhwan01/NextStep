@@ -137,12 +137,8 @@ class PathGeneratorService:
 
         # Determine which nodes to include
         if path_type == "fast_track":
-            # Only include target skills + strong prerequisites (strength >= 0.6)
+            # Only include target skills + strong prerequisites (strength >= 0.5)
             include_ids = set(target_skill_ids)
-            for edge in subgraph.edges:
-                if edge.type == "PREREQUISITE_OF" and edge.to_id in include_ids and edge.strength >= 0.6:
-                    include_ids.add(edge.from_id)
-            # Recursively add strong prerequisites
             changed = True
             while changed:
                 changed = False
@@ -151,7 +147,7 @@ class PathGeneratorService:
                         edge.type == "PREREQUISITE_OF"
                         and edge.to_id in include_ids
                         and edge.from_id not in include_ids
-                        and edge.strength >= 0.6
+                        and edge.strength >= 0.5
                     ):
                         include_ids.add(edge.from_id)
                         changed = True
@@ -170,8 +166,14 @@ class PathGeneratorService:
                         include_ids.add(edge.from_id)
                         changed = True
 
-        # Remove already-known skills (but keep them if they're prerequisites of unknown skills)
+        # Remove already-known skills
         path_node_ids = include_ids - known_skill_ids
+
+        # Collect skipped skill names for metadata
+        skipped_skill_names = [
+            node_map[sid].name_ko for sid in known_skill_ids
+            if sid in node_map
+        ]
 
         # Topological sort of remaining nodes
         sorted_ids = self._topological_sort(path_node_ids, subgraph.edges)
@@ -219,12 +221,17 @@ class PathGeneratorService:
                     strength=edge.strength,
                 ))
 
+        # Calculate concurrent groups (skills with same topological depth)
+        concurrent_groups = self._calculate_concurrent_groups(path_id_set, subgraph.edges)
+
         metadata = PathMetadata(
             total_hours=total_hours,
             total_nodes=len(path_nodes),
             skipped_count=len(known_skill_ids),
+            skipped_skills=skipped_skill_names,
             path_type=path_type,
             job_title="",
+            concurrent_groups=concurrent_groups,
         )
 
         return GeneratedPath(nodes=path_nodes, edges=path_edges, metadata=metadata)
@@ -258,6 +265,41 @@ class PathGeneratorService:
         result.extend(sorted(remaining))
 
         return result
+
+    def _calculate_concurrent_groups(self, node_ids: set[str], edges: list) -> list[list[str]]:
+        """
+        Group skills by topological depth level.
+        Skills at the same depth can be learned in parallel.
+        """
+        # Build prerequisite graph within path nodes
+        prereq_of: dict[str, set[str]] = defaultdict(set)
+        for edge in edges:
+            if edge.type == "PREREQUISITE_OF" and edge.from_id in node_ids and edge.to_id in node_ids:
+                prereq_of[edge.to_id].add(edge.from_id)
+
+        # Calculate depth for each node (longest path from any root)
+        depths: dict[str, int] = {}
+
+        def get_depth(nid: str) -> int:
+            if nid in depths:
+                return depths[nid]
+            prereqs = prereq_of.get(nid, set())
+            if not prereqs:
+                depths[nid] = 0
+                return 0
+            depth = max(get_depth(p) for p in prereqs) + 1
+            depths[nid] = depth
+            return depth
+
+        for nid in node_ids:
+            get_depth(nid)
+
+        # Group by depth
+        depth_groups: dict[int, list[str]] = defaultdict(list)
+        for nid, d in sorted(depths.items(), key=lambda x: x[1]):
+            depth_groups[d].append(nid)
+
+        return [group for _, group in sorted(depth_groups.items()) if len(group) > 0]
 
     async def _augment_graph(self, unmatched_skills: list) -> None:
         """Use AI to create missing skills in the graph."""
