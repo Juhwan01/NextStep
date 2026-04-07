@@ -32,8 +32,10 @@ export interface PathMetadata {
   total_hours: number;
   total_nodes: number;
   skipped_count: number;
+  skipped_skills: string[];
   path_type: "fast_track" | "fundamentals";
   job_title: string;
+  concurrent_groups: string[][];
 }
 
 export interface GeneratedPath {
@@ -51,10 +53,15 @@ export interface DualPath {
   };
 }
 
+export type ProgressStatus = "not_started" | "in_progress" | "completed";
+
+export type ProgressMap = Record<string, ProgressStatus>;
+
 export interface PathResponse {
   id: string;
   job_input: string;
   user_state_input: string;
   paths: DualPath;
+  progress: ProgressMap;
   created_at: string;
 }

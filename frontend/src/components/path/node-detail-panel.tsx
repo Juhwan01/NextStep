@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { GlassCard } from "@/components/ui";
-import type { PathNode } from "@/types/path";
+import type { PathNode, ProgressStatus } from "@/types/path";
 import { CATEGORY_STYLES } from "@/lib/constants";
 import { apiClient } from "@/services/api-client";
 
@@ -11,6 +11,7 @@ interface NodeDetailPanelProps {
   node: PathNode;
   pathId: string;
   onClose: () => void;
+  onProgressChange?: (nodeId: string, status: ProgressStatus) => void;
 }
 
 interface ContentItem {
@@ -23,7 +24,7 @@ interface ContentItem {
   is_free: boolean;
 }
 
-export function NodeDetailPanel({ node, pathId: _pathId, onClose }: NodeDetailPanelProps) {
+export function NodeDetailPanel({ node, pathId: _pathId, onClose, onProgressChange }: NodeDetailPanelProps) {
   const [contents, setContents] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const categoryStyle = CATEGORY_STYLES[node.category] || { color: "#888", icon: "circle" };
@@ -90,6 +91,59 @@ export function NodeDetailPanel({ node, pathId: _pathId, onClose }: NodeDetailPa
               <div className="text-[10px] text-white/30">시장 수요</div>
             </div>
           </div>
+
+          {/* Progress tracking */}
+          {onProgressChange && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-white/60 mb-2">학습 상태</h3>
+              <div className="flex gap-2">
+                {node.status === "not_started" || node.status === "recommended_next" ? (
+                  <button
+                    onClick={() => onProgressChange(node.id, "in_progress")}
+                    className="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all
+                      bg-blue-500/20 text-blue-400 border border-blue-500/30
+                      hover:bg-blue-500/30 hover:border-blue-500/50"
+                  >
+                    학습 시작
+                  </button>
+                ) : node.status === "in_progress" ? (
+                  <>
+                    <button
+                      onClick={() => onProgressChange(node.id, "completed")}
+                      className="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all
+                        bg-emerald-500/20 text-emerald-400 border border-emerald-500/30
+                        hover:bg-emerald-500/30 hover:border-emerald-500/50"
+                    >
+                      학습 완료
+                    </button>
+                    <button
+                      onClick={() => onProgressChange(node.id, "not_started")}
+                      className="py-2 px-3 rounded-lg text-sm font-medium transition-all
+                        bg-white/5 text-white/40 border border-white/10
+                        hover:bg-white/10 hover:text-white/60"
+                    >
+                      취소
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-sm text-emerald-400">
+                      <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-xs text-white">
+                        ✓
+                      </span>
+                      학습 완료
+                    </span>
+                    <button
+                      onClick={() => onProgressChange(node.id, "in_progress")}
+                      className="text-xs text-white/30 hover:text-white/50 transition-colors"
+                    >
+                      되돌리기
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* AI Explanation */}
           {node.explanation.why_needed && (

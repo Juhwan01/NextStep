@@ -1,14 +1,13 @@
 "use client";
 
-import { use } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SkillGraph } from "@/components/graph/skill-graph";
 import { LoadingSpinner } from "@/components/ui";
 import { pathApi } from "@/services/path-api";
-import type { DualPath } from "@/types/path";
+import type { DualPath, ProgressMap } from "@/types/path";
 
-export default function PathPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function PathPage({ params }: { params: { id: string } }) {
+  const { id } = params;
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["path", id],
@@ -34,8 +33,9 @@ export default function PathPage({ params }: { params: Promise<{ id: string }> }
     );
   }
 
-  const pathData = data as any;
+  const pathData = data as unknown as { paths: DualPath; progress?: ProgressMap };
   const dualPath: DualPath = pathData.paths;
+  const progress: ProgressMap = pathData.progress ?? {};
 
-  return <SkillGraph dualPath={dualPath} pathId={id} />;
+  return <SkillGraph dualPath={dualPath} pathId={id} initialProgress={progress} />;
 }
