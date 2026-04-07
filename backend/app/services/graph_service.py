@@ -31,14 +31,14 @@ class GraphService:
         """Full-text search on skill names."""
         cypher = """
         MATCH (s:Skill)
-        WHERE toLower(s.name) CONTAINS toLower($query)
-           OR toLower(s.name_ko) CONTAINS toLower($query)
+        WHERE toLower(s.name) CONTAINS toLower($q)
+           OR toLower(s.name_ko) CONTAINS toLower($q)
         """
         if category:
             cypher += " AND s.category = $category"
         cypher += " RETURN s LIMIT $limit"
 
-        params: dict = {"query": query, "limit": limit}
+        params: dict = {"q": query, "limit": limit}
         if category:
             params["category"] = category
 
