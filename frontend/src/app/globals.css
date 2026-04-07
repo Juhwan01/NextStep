@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .glass {
+    @apply bg-white/5 backdrop-blur-[12px] border border-white/10 rounded-xl;
+  }
+
+  .glass-card {
+    @apply glass shadow-lg;
+  }
+}
+
+@layer utilities {
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+  }
+
+  .glow-teal {
+    box-shadow: 0 0 20px rgba(0, 255, 213, 0.3);
+  }
+}

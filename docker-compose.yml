@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nextstep-postgres
+    environment:
+      POSTGRES_DB: nextstep
+      POSTGRES_USER: nextstep
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nextstep_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nextstep"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: nextstep-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-nextstep_dev}
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4jdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD:-nextstep_dev} 'RETURN 1'"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: nextstep-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nextstep:${POSTGRES_PASSWORD:-nextstep_dev}@postgres:5432/nextstep
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-nextstep_dev}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: nextstep-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  neo4jdata:
