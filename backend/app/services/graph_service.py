@@ -12,6 +12,20 @@ class GraphService:
     def __init__(self, neo4j_driver: AsyncDriver) -> None:
         self.driver = neo4j_driver
 
+    def _parse_skill(self, node_data: dict) -> SkillNode:
+        """Parse Neo4j node data into SkillNode, handling explanation JSON."""
+        data = dict(node_data)
+        # Parse explanation from JSON string if stored
+        exp = data.pop("explanation", None)
+        if exp and isinstance(exp, str):
+            import json
+            try:
+                exp = json.loads(exp)
+            except (json.JSONDecodeError, TypeError):
+                exp = None
+        data["explanation"] = exp
+        return SkillNode(**data)
+
     async def get_skill(self, skill_id: str) -> Optional[SkillNode]:
         """Fetch a single skill node by ID."""
         query = "MATCH (s:Skill {id: $id}) RETURN s"
@@ -19,7 +33,7 @@ class GraphService:
             result = await session.run(query, id=skill_id)
             record = await result.single()
             if record:
-                return SkillNode(**dict(record["s"]))
+                return self._parse_skill(record["s"])
             return None
 
     async def search_skills(
@@ -45,7 +59,7 @@ class GraphService:
         async with self.driver.session() as session:
             result = await session.run(cypher, **params)
             records = await result.data()
-            return [SkillNode(**record["s"]) for record in records]
+            return [self._parse_skill(record["s"]) for record in records]
 
     async def get_skill_prerequisites(
         self, skill_id: str, depth: int = 5
@@ -59,7 +73,7 @@ class GraphService:
         async with self.driver.session() as session:
             result = await session.run(query, id=skill_id)
             records = await result.data()
-            return [SkillNode(**record["prereq"]) for record in records]
+            return [self._parse_skill(record["prereq"]) for record in records]
 
     async def get_skills_by_ids(self, skill_ids: list[str]) -> list[SkillNode]:
         """Batch fetch skills by IDs."""
@@ -67,7 +81,7 @@ class GraphService:
         async with self.driver.session() as session:
             result = await session.run(query, ids=skill_ids)
             records = await result.data()
-            return [SkillNode(**record["s"]) for record in records]
+            return [self._parse_skill(record["s"]) for record in records]
 
     async def get_skills_by_names(self, names: list[str]) -> list[SkillNode]:
         """Match skills by name (case-insensitive)."""
@@ -80,7 +94,7 @@ class GraphService:
         async with self.driver.session() as session:
             result = await session.run(query, names=lower_names)
             records = await result.data()
-            return [SkillNode(**record["s"]) for record in records]
+            return [self._parse_skill(record["s"]) for record in records]
 
     async def find_shortest_path(
         self, from_id: str, to_id: str
@@ -96,7 +110,7 @@ class GraphService:
             result = await session.run(query, from_id=from_id, to_id=to_id)
             record = await result.single()
             if record:
-                return [SkillNode(**dict(n)) for n in record["path_nodes"]]
+                return [self._parse_skill(n) for n in record["path_nodes"]]
             return []
 
     async def get_subgraph_for_skills(
@@ -132,7 +146,7 @@ class GraphService:
             if record:
                 for n in record["nodes"]:
                     if n is not None:
-                        nodes.append(SkillNode(**dict(n)))
+                        nodes.append(self._parse_skill(n))
                 for e in record["edges"]:
                     if e and e.get("from_id") and e.get("to_id"):
                         edges.append(
@@ -183,7 +197,7 @@ class GraphService:
         async with self.driver.session() as session:
             result = await session.run(query, id=skill_id, **skill.model_dump())
             record = await result.single()
-            return SkillNode(**dict(record["s"]))
+            return self._parse_skill(record["s"])
 
     ALLOWED_REL_TYPES = {"PREREQUISITE_OF", "RELATED_TO", "PART_OF", "LEADS_TO"}
 
@@ -241,7 +255,7 @@ class GraphService:
         async with self.driver.session() as session:
             result = await session.run(query, limit=limit)
             record = await result.single()
-            nodes = [SkillNode(**dict(n)) for n in (record["nodes"] or [])]
+            nodes = [self._parse_skill(n) for n in (record["nodes"] or [])]
             edges = [
                 Relationship(
                     from_id=e["from_id"],
@@ -253,6 +267,81 @@ class GraphService:
                 if e.get("from_id") and e.get("to_id")
             ]
             return SubGraph(nodes=nodes, edges=edges)
+
+    async def serialize_for_prompt(self, limit: int = 200) -> str:
+        """Serialize the full skill graph into a compact text block for LLM prompts.
+
+        Format is token-efficient: ~2000 tokens for 60 skills + 150 edges.
+        """
+        graph = await self.get_full_graph(limit=limit)
+
+        lines = ["[스킬 목록]"]
+        for n in sorted(graph.nodes, key=lambda x: (x.category, x.difficulty)):
+            lines.append(
+                f"- {n.name} ({n.name_ko}) | id:{n.id} | 분야:{n.category} | 난이도:{n.difficulty:.1f} | {n.estimated_hours}h"
+            )
+
+        prereq_map: dict[str, list[str]] = {}
+        for e in graph.edges:
+            if e.type == "PREREQUISITE_OF":
+                # from → to (from is prerequisite OF to)
+                prereq_map.setdefault(e.from_id, []).append(e.to_id)
+
+        if prereq_map:
+            # Build name lookup
+            id_to_name = {n.id: n.name for n in graph.nodes}
+            lines.append("\n[선행 관계] (A → B: A를 먼저 배워야 B를 배울 수 있음)")
+            for from_id, to_ids in prereq_map.items():
+                from_name = id_to_name.get(from_id, from_id)
+                to_names = [id_to_name.get(tid, tid) for tid in to_ids]
+                lines.append(f"- {from_name} → {', '.join(to_names)}")
+
+        return "\n".join(lines)
+
+    async def save_skill_explanations(self, explanations: dict[str, dict]) -> int:
+        """Save AI-generated explanations to Skill nodes in Neo4j (batch)."""
+        import json
+        if not explanations:
+            return 0
+        query = """
+        UNWIND $items AS item
+        MATCH (s:Skill {id: item.id})
+        SET s.explanation = item.explanation
+        RETURN count(s) as updated
+        """
+        items = [
+            {"id": sid, "explanation": json.dumps(exp, ensure_ascii=False)}
+            for sid, exp in explanations.items()
+            if exp.get("why_needed")
+        ]
+        if not items:
+            return 0
+        async with self.driver.session() as session:
+            result = await session.run(query, items=items)
+            record = await result.single()
+            return record["updated"] if record else 0
+
+    async def get_skill_explanations(self, skill_ids: list[str]) -> dict[str, dict]:
+        """Get cached explanations for skills. Returns {skill_id: explanation_dict}."""
+        import json
+        query = """
+        MATCH (s:Skill) WHERE s.id IN $ids AND s.explanation IS NOT NULL
+        RETURN s.id as id, s.explanation as explanation
+        """
+        result_map = {}
+        async with self.driver.session() as session:
+            result = await session.run(query, ids=skill_ids)
+            records = await result.data()
+            for record in records:
+                exp = record["explanation"]
+                if isinstance(exp, str):
+                    try:
+                        exp = json.loads(exp)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                if exp and exp.get("why_needed"):
+                    result_map[record["id"]] = exp
+        return result_map
 
     async def merge_skill(
         self, name: str, properties: dict
@@ -273,4 +362,4 @@ class GraphService:
         async with self.driver.session() as session:
             result = await session.run(query, **params)
             record = await result.single()
-            return SkillNode(**dict(record["s"])), bool(record["was_created"])
+            return self._parse_skill(record["s"]), bool(record["was_created"])

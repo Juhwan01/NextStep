@@ -35,7 +35,7 @@ async def generate_path(
     ai_service = AIService()
     graph_service = GraphService(neo4j)
     job_interpreter = JobInterpreterService(ai_service, graph_service)
-    user_state_service = UserStateService(ai_service)
+    user_state_service = UserStateService(ai_service, graph_service)
     path_generator = PathGeneratorService(ai_service, graph_service, job_interpreter, user_state_service)
 
     try:
@@ -129,6 +129,102 @@ async def get_path(
         "progress": progress_map,
         "created_at": user_path.created_at.isoformat(),
     }
+
+
+@router.get("/{path_id}/explain/{skill_id}")
+async def explain_skill(
+    path_id: str,
+    skill_id: str,
+    db: AsyncSession = Depends(get_db),
+    neo4j=Depends(get_neo4j),
+    user: Optional[User] = Depends(get_current_user_optional),
+):
+    """Generate explanation for a single skill on-demand (lazy loading)."""
+    result = await db.execute(select(UserPath).where(UserPath.id == path_id))
+    user_path = result.scalar_one_or_none()
+    if not user_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Path not found")
+
+    # Find the skill name from path_data
+    skill_name = None
+    job_title = ""
+    path_data = user_path.path_data or {}
+    for track in ["fast_track", "fundamentals"]:
+        track_data = path_data.get(track, {})
+        job_title = track_data.get("metadata", {}).get("job_title", "")
+        for node in track_data.get("nodes", []):
+            if node.get("id") == skill_id:
+                skill_name = node.get("name", "")
+                break
+        if skill_name:
+            break
+
+    # Also check shared_graph nodes
+    if not skill_name:
+        for node in path_data.get("shared_graph", {}).get("nodes", []):
+            if node.get("id") == skill_id:
+                skill_name = node.get("name", "")
+                break
+
+    if not skill_name:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found in path")
+
+    if not job_title:
+        job_title = user_path.job_input
+
+    graph_service = GraphService(neo4j)
+
+    # Check Neo4j cache first
+    cached = await graph_service.get_skill_explanations([skill_id])
+    if skill_id in cached:
+        return {"skill_id": skill_id, "explanation": cached[skill_id]}
+
+    # Generate with AI and cache to Neo4j
+    ai_service = AIService()
+    job_interpreter = JobInterpreterService(ai_service, graph_service)
+    user_state_service = UserStateService(ai_service)
+    path_generator = PathGeneratorService(ai_service, graph_service, job_interpreter, user_state_service)
+
+    explanation = await path_generator.generate_explanation_for_skill(skill_id, job_title, skill_name)
+
+    # Save to Neo4j for future requests
+    if explanation.get("why_needed"):
+        await graph_service.save_skill_explanations({skill_id: explanation})
+
+    return {"skill_id": skill_id, "explanation": explanation}
+
+
+@router.delete("/{path_id}")
+async def delete_path(
+    path_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
+):
+    """Delete a saved path and its progress records."""
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    result = await db.execute(select(UserPath).where(UserPath.id == path_id))
+    user_path = result.scalar_one_or_none()
+    if not user_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Path not found")
+
+    if not user_path.user_id or str(user_path.user_id) != str(user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+    # Delete progress records first
+    progress_result = await db.execute(
+        select(LearningProgress).where(LearningProgress.path_id == path_id)
+    )
+    for record in progress_result.scalars().all():
+        await db.delete(record)
+
+    await db.delete(user_path)
+    await db.commit()
+    return {"status": "deleted", "id": path_id}
 
 
 @router.patch("/{path_id}/progress")

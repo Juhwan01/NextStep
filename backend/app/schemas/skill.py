@@ -2,6 +2,12 @@ from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 
+class SkillExplanation(BaseModel):
+    why_needed: str = ""
+    job_relevance: str = ""
+    connection_to_next: str = ""
+
+
 class SkillNode(BaseModel):
     id: str
     name: str
@@ -12,6 +18,7 @@ class SkillNode(BaseModel):
     estimated_hours: int
     description: str
     source: str  # "core" | "ai_generated" | "admin"
+    explanation: Optional[dict] = None  # Cached AI explanation
 
 
 class SkillCreate(BaseModel):

@@ -89,7 +89,7 @@ class AIService:
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "timeout": 30.0,
+            "timeout": 60.0,
         }
 
         if response_format:

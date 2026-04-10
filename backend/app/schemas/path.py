@@ -40,6 +40,7 @@ class PathMetadata(BaseModel):
     path_type: str
     job_title: str
     concurrent_groups: list[list[str]] = []  # Groups of skill IDs learnable in parallel
+    goal_node_id: str = ""  # Explicitly determined goal node
 
 
 class GeneratedPath(BaseModel):
