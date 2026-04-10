@@ -7,11 +7,21 @@ import type { PathNode, ProgressStatus } from "@/types/path";
 import { CATEGORY_STYLES } from "@/lib/constants";
 import { apiClient } from "@/services/api-client";
 
+interface ConnectionNode {
+  id: string;
+  name: string;
+  status: string;
+}
+
 interface NodeDetailPanelProps {
   node: PathNode;
   pathId: string;
   onClose: () => void;
   onProgressChange?: (nodeId: string, status: ProgressStatus) => void;
+  connections?: {
+    prerequisites: ConnectionNode[];
+    unlocks: ConnectionNode[];
+  };
 }
 
 interface ContentItem {
@@ -24,10 +34,33 @@ interface ContentItem {
   is_free: boolean;
 }
 
-export function NodeDetailPanel({ node, pathId: _pathId, onClose, onProgressChange }: NodeDetailPanelProps) {
+export function NodeDetailPanel({ node, pathId, onClose, onProgressChange, connections }: NodeDetailPanelProps) {
   const [contents, setContents] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [explanation, setExplanation] = useState(node.explanation);
+  const [explanationLoading, setExplanationLoading] = useState(false);
   const categoryStyle = CATEGORY_STYLES[node.category] || { color: "#888", icon: "circle" };
+
+  useEffect(() => {
+    setExplanation(node.explanation);
+  }, [node.id, node.explanation]);
+
+  // Lazy load explanation if empty
+  useEffect(() => {
+    const hasExplanation = explanation?.why_needed && explanation.why_needed.length > 0;
+    if (hasExplanation || !pathId) return;
+
+    setExplanationLoading(true);
+    apiClient
+      .get(`/paths/${pathId}/explain/${node.id}`)
+      .then((res: any) => {
+        setExplanation(res.explanation || {});
+      })
+      .catch(() => {
+        // silently fail — explanation is optional
+      })
+      .finally(() => setExplanationLoading(false));
+  }, [node.id, pathId, explanation]);
 
   useEffect(() => {
     async function fetchContent() {
@@ -87,7 +120,7 @@ export function NodeDetailPanel({ node, pathId: _pathId, onClose, onProgressChan
               <div className="text-[10px] text-white/30">난이도</div>
             </div>
             <div className="text-center p-2 bg-white/5 rounded-lg">
-              <div className="text-lg font-semibold text-white">{Math.round(node.market_demand * 100)}%</div>
+              <div className="text-lg font-semibold text-white">{Math.round((node.market_demand ?? 0) * 100)}%</div>
               <div className="text-[10px] text-white/30">시장 수요</div>
             </div>
           </div>
@@ -145,26 +178,106 @@ export function NodeDetailPanel({ node, pathId: _pathId, onClose, onProgressChan
             </div>
           )}
 
+          {/* Connections: Prerequisites & Unlocks */}
+          {connections && (connections.prerequisites.length > 0 || connections.unlocks.length > 0) && (
+            <div className="mb-6 space-y-3">
+              {connections.prerequisites.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-white/40 mb-2 flex items-center gap-1">
+                    <span className="text-amber-400">←</span> 선행 조건
+                  </h3>
+                  <div className="space-y-1.5">
+                    {connections.prerequisites.map((n) => (
+                      <div
+                        key={n.id}
+                        className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/5"
+                      >
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          n.status === "completed" ? "bg-emerald-500" :
+                          n.status === "in_progress" ? "bg-blue-400" : "bg-white/20"
+                        }`} />
+                        <span className="text-sm text-white/70 truncate">{n.name}</span>
+                        <span className={`text-[10px] ml-auto flex-shrink-0 ${
+                          n.status === "completed" ? "text-emerald-400" :
+                          n.status === "in_progress" ? "text-blue-400" : "text-white/30"
+                        }`}>
+                          {n.status === "completed" ? "완료" : n.status === "in_progress" ? "학습중" : "미시작"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {connections.unlocks.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-white/40 mb-2 flex items-center gap-1">
+                    <span className="text-[#00d4ff]">→</span> 이걸 배우면
+                  </h3>
+                  <div className="space-y-1.5">
+                    {connections.unlocks.map((n) => (
+                      <div
+                        key={n.id}
+                        className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/5"
+                      >
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          n.status === "completed" ? "bg-emerald-500" :
+                          n.status === "in_progress" ? "bg-blue-400" : "bg-white/20"
+                        }`} />
+                        <span className="text-sm text-white/70 truncate">{n.name}</span>
+                        <span className={`text-[10px] ml-auto flex-shrink-0 ${
+                          n.status === "completed" ? "text-emerald-400" :
+                          n.status === "in_progress" ? "text-blue-400" : "text-white/30"
+                        }`}>
+                          {n.status === "completed" ? "완료" : n.status === "in_progress" ? "학습중" : "잠금"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* AI Explanation */}
-          {node.explanation.why_needed && (
+          {explanationLoading ? (
+            <div className="mb-6 space-y-3">
+              <h3 className="text-sm font-semibold text-[#00d4ff]">AI 추천 이유</h3>
+              <div className="space-y-2">
+                <div className="h-4 bg-white/5 rounded animate-pulse" />
+                <div className="h-4 bg-white/5 rounded animate-pulse w-3/4" />
+                <div className="h-4 bg-white/5 rounded animate-pulse w-1/2" />
+              </div>
+            </div>
+          ) : explanation?.why_needed ? (
             <div className="mb-6 space-y-3">
               <h3 className="text-sm font-semibold text-[#00d4ff]">AI 추천 이유</h3>
               <div className="space-y-2 text-sm text-white/60">
                 <div>
                   <span className="text-white/40 text-xs">왜 필요한가</span>
-                  <p>{node.explanation.why_needed}</p>
+                  <p>{explanation.why_needed}</p>
                 </div>
-                <div>
-                  <span className="text-white/40 text-xs">실무 활용</span>
-                  <p>{node.explanation.job_relevance}</p>
-                </div>
-                {node.explanation.connection_to_next && (
+                {explanation.job_relevance && (
+                  <div>
+                    <span className="text-white/40 text-xs">실무 활용</span>
+                    <p>{explanation.job_relevance}</p>
+                  </div>
+                )}
+                {explanation.connection_to_next && (
                   <div>
                     <span className="text-white/40 text-xs">다음 단계 연결</span>
-                    <p>{node.explanation.connection_to_next}</p>
+                    <p>{explanation.connection_to_next}</p>
                   </div>
                 )}
               </div>
+            </div>
+          ) : null}
+
+          {/* Background node hint */}
+          {node.order === -1 && !node.explanation?.why_needed && (
+            <div className="mb-6 px-3 py-2 bg-white/5 rounded-lg border border-white/10">
+              <p className="text-xs text-white/40">
+                이 스킬은 현재 경로에 포함되지 않지만, 관련된 기술입니다. 학습을 시작하면 진행 상태가 기록됩니다.
+              </p>
             </div>
           )}
 

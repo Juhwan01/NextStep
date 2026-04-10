@@ -1,18 +1,40 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { SkillGraph } from "@/components/graph/skill-graph";
 import { LoadingSpinner } from "@/components/ui";
+import { useAuthStore } from "@/stores/auth-store";
 import { pathApi } from "@/services/path-api";
 import type { DualPath, ProgressMap } from "@/types/path";
 
 export default function PathPage({ params }: { params: { id: string } }) {
   const { id } = params;
+  const router = useRouter();
+  const { token, isInitialized } = useAuthStore();
+
+  // Auth guard: redirect to home if not logged in
+  useEffect(() => {
+    if (isInitialized && !token) {
+      router.replace("/");
+    }
+  }, [isInitialized, token, router]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["path", id],
     queryFn: () => pathApi.getById(id),
+    enabled: !!token,
   });
+
+  // Show loading while auth is initializing or redirecting
+  if (!isInitialized || !token) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <LoadingSpinner size="lg" text="인증 확인 중..." />
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

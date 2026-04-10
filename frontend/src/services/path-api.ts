@@ -13,8 +13,11 @@ export const pathApi = {
     apiClient.get(`/paths/${id}`),
 
   getMine: () =>
-    apiClient.get("/paths/mine"),
+    apiClient.get("/paths/mine/list"),
 
   updateProgress: (pathId: string, nodeId: string, status: string) =>
     apiClient.patch(`/paths/${pathId}/progress`, { skill_node_id: nodeId, status }),
+
+  deletePath: (pathId: string) =>
+    apiClient.delete(`/paths/${pathId}`),
 };

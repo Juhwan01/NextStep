@@ -35,7 +35,8 @@ export function transformToReactFlow(
   path: GeneratedPath,
   pathType: "fast_track" | "fundamentals" = "fast_track",
   progressMap: ProgressMap = {},
-  sharedGraph?: DualPath["shared_graph"]
+  sharedGraph?: DualPath["shared_graph"],
+  existingNodes?: Node[]
 ): { nodes: Node[]; edges: Edge[] } {
   const colors = PATH_COLORS[pathType];
 
@@ -86,40 +87,160 @@ export function transformToReactFlow(
     (e) => mergedNodeIds.has(e.source) && mergedNodeIds.has(e.target)
   );
 
-  // Layout all nodes with d3-force
-  const { nodes: layoutNodes, edges: layoutEdges } = computeForceLayout(
-    mergedNodes,
-    validEdges,
-    {
-      concurrentGroups: path.metadata.concurrent_groups,
-      pathNodeIds,
-      centerNodeId: path.nodes.find((n) => n.order === 0)?.id,
-    }
+  // Pre-compute start/goal node IDs for position anchoring
+  const startNodeIdForLayout = path.nodes.find((n) => n.order === 0)?.id;
+  const maxOrderForLayout = Math.max(...path.nodes.map((n) => n.order), 0);
+  const sourceIdsForLayout = new Set(
+    path.edges.filter((e) => e.type === "PREREQUISITE_OF").map((e) => e.source)
   );
+  const goalNodeIdForLayout = path.nodes.find(
+    (n) => !sourceIdsForLayout.has(n.id) && n.order >= maxOrderForLayout * 0.7
+  )?.id;
+
+  // Layout: reuse existing positions if available (progress-only update), else compute fresh
+  let layoutNodes: import("./graph-layout").LayoutNode[];
+  let layoutEdges: import("./graph-layout").LayoutEdge[];
+
+  if (existingNodes && existingNodes.length > 0) {
+    // Reuse positions from previous layout — no d3-force re-run
+    const existingPositionMap = new Map(existingNodes.map((n) => [n.id, n.position]));
+    layoutNodes = mergedNodes.map((mn) => ({
+      id: mn.id,
+      position: existingPositionMap.get(mn.id) || { x: 0, y: 0 },
+      data: mn,
+    }));
+    layoutEdges = validEdges
+      .filter((e) => existingPositionMap.has(e.source) && existingPositionMap.has(e.target))
+      .map((edge, i) => ({
+        id: `edge-${edge.source}-${edge.target}-${i}`,
+        source: edge.source,
+        target: edge.target,
+        data: edge,
+      }));
+  } else {
+    const result = computeForceLayout(
+      mergedNodes,
+      validEdges,
+      {
+        concurrentGroups: path.metadata.concurrent_groups,
+        pathNodeIds,
+        centerNodeId: startNodeIdForLayout,
+        startNodeId: startNodeIdForLayout,
+        goalNodeId: goalNodeIdForLayout,
+      }
+    );
+    layoutNodes = result.nodes;
+    layoutEdges = result.edges;
+  }
 
   // Build position lookup for handle routing
   const positionMap = new Map(
     layoutNodes.map((ln) => [ln.id, ln.position])
   );
 
-  // Determine start and target from path nodes only
-  const maxOrder = Math.max(...path.nodes.map((n) => n.order), 0);
+  // Determine start and target from path nodes + backend metadata
   const startNodeIds = new Set(
     path.nodes.filter((n) => n.order === 0).map((n) => n.id)
   );
-  const sourceIds = new Set(
-    path.edges.filter((e) => e.type === "PREREQUISITE_OF").map((e) => e.source)
-  );
-  const targetNodeIds = new Set(
+
+  // Use backend-provided goal_node_id if available, fallback to heuristic
+  const targetNodeIds = new Set<string>();
+  if (path.metadata.goal_node_id) {
+    targetNodeIds.add(path.metadata.goal_node_id);
+  } else {
+    const maxOrder = Math.max(...path.nodes.map((n) => n.order), 0);
+    const sourceIds = new Set(
+      path.edges.filter((e) => e.type === "PREREQUISITE_OF").map((e) => e.source)
+    );
     path.nodes
       .filter((n) => !sourceIds.has(n.id) && n.order >= maxOrder * 0.7)
-      .map((n) => n.id)
+      .forEach((n) => targetNodeIds.add(n.id));
+  }
+
+  // --- Progressive unlock: ORDER-BASED sequence ---
+  // Unlock is based on learning order, not graph prerequisites.
+  // A node is "recommended_next" when ALL nodes at the previous order are completed.
+  const completedNodeIds = new Set<string>();
+  for (const n of path.nodes) {
+    if (progressMap[n.id] === "completed") completedNodeIds.add(n.id);
+  }
+
+  // Group path nodes by order
+  const orderToNodeIds = new Map<number, string[]>();
+  for (const n of path.nodes) {
+    if (!orderToNodeIds.has(n.order)) orderToNodeIds.set(n.order, []);
+    orderToNodeIds.get(n.order)!.push(n.id);
+  }
+  const sortedOrders = [...orderToNodeIds.keys()].sort((a, b) => a - b);
+
+  // Find the highest fully-completed order level
+  let highestCompletedOrder = -1;
+  for (const order of sortedOrders) {
+    const ids = orderToNodeIds.get(order)!;
+    if (ids.every((id) => completedNodeIds.has(id))) {
+      highestCompletedOrder = order;
+    } else {
+      break;
+    }
+  }
+
+  // Unlocked nodes: next order after highest completed, or order 0 if nothing completed
+  const unlockedNodeIds = new Set<string>();
+  const nextOrder = highestCompletedOrder + 1;
+  const nextOrderIndex = sortedOrders.indexOf(nextOrder);
+  if (nextOrderIndex === -1) {
+    // nextOrder doesn't exist exactly, find the first incomplete order
+    for (const order of sortedOrders) {
+      const ids = orderToNodeIds.get(order)!;
+      if (!ids.every((id) => completedNodeIds.has(id))) {
+        for (const id of ids) {
+          if (!completedNodeIds.has(id) && progressMap[id] !== "in_progress") {
+            unlockedNodeIds.add(id);
+          }
+        }
+        break;
+      }
+    }
+  } else {
+    for (const id of orderToNodeIds.get(nextOrder) || []) {
+      if (!completedNodeIds.has(id) && progressMap[id] !== "in_progress") {
+        unlockedNodeIds.add(id);
+      }
+    }
+  }
+
+  // Active edges: ONLY from nodes at highestCompletedOrder → unlocked nodes
+  // This prevents ALL completed nodes from pointing to the next recommendation.
+  // Only the immediately preceding completed order should show the unlock arrow.
+  const highestCompletedOrderNodeIds = new Set(
+    orderToNodeIds.get(highestCompletedOrder) || []
   );
+  const activeEdgeKeys = new Set<string>();
+  const completedEdgeKeys = new Set<string>();
+  for (const e of path.edges) {
+    if (e.type === "PREREQUISITE_OF" || e.type === "LEARNING_SEQUENCE") {
+      const key = `${e.source}->${e.target}`;
+      if (
+        highestCompletedOrderNodeIds.has(e.source) &&
+        completedNodeIds.has(e.source) &&
+        unlockedNodeIds.has(e.target)
+      ) {
+        activeEdgeKeys.add(key);
+      }
+      if (completedNodeIds.has(e.source) && completedNodeIds.has(e.target)) {
+        completedEdgeKeys.add(key);
+      }
+    }
+  }
 
   const rfNodes: Node[] = layoutNodes.map((ln) => {
     const isOnPath = pathNodeIds.has(ln.id);
     const savedStatus = progressMap[ln.id];
-    const effectiveStatus = savedStatus || ln.data.status;
+    // Progressive unlock: override status to recommended_next for unlocked nodes
+    // Use explicit check — "not_started" is truthy but should NOT block recommended_next
+    const effectiveStatus = (savedStatus && savedStatus !== "not_started")
+      ? savedStatus
+      : (isOnPath && unlockedNodeIds.has(ln.id) ? "recommended_next" : (savedStatus || ln.data.status));
 
     return {
       id: ln.id,
@@ -155,6 +276,10 @@ export function transformToReactFlow(
       ? computeHandlePair(sourcePos, targetPos)
       : { sourceHandle: "bottom-source", targetHandle: "top-target" };
 
+    const edgeKey = `${le.source}->${le.target}`;
+    const isUnlockEdge = activeEdgeKeys.has(edgeKey);
+    const isCompletedEdge = completedEdgeKeys.has(edgeKey);
+
     return {
       id: le.id,
       source: le.source,
@@ -166,8 +291,10 @@ export function transformToReactFlow(
         ...le.data,
         pathColor: colors.primary,
         glowColor: colors.glow,
+        isUnlockEdge,
+        isCompletedEdge,
       },
-      animated: le.data.on_recommended_path,
+      animated: isUnlockEdge || (le.data.on_recommended_path && le.data.type === "LEARNING_SEQUENCE"),
     };
   });
 

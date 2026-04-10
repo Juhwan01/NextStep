@@ -47,19 +47,22 @@ export const GRAPH_CONFIG = {
 
 // d3-force layout configuration for skill map
 export const FORCE_LAYOUT_CONFIG = {
-  simulationTicks: 120,
-  alphaDecay: 0.02,
+  simulationTicks: 150,
+  alphaDecay: 0.018,
   velocityDecay: 0.3,
-  chargeStrength: -300,
-  pathNodeCharge: -450,
-  linkDistance: 180,
-  linkStrength: 0.3,
-  collisionRadius: 110,
-  clusterStrength: 0.15,
-  clusterRadius: 400,
-  depthStrength: 0.4,
-  depthSpacing: 200,
-  pathCenterStrength: 0.08,
+  chargeStrength: -500,
+  pathNodeCharge: -650,
+  linkDistance: 260,
+  linkStrength: 0.25,
+  collisionRadius: 180,
+  clusterStrength: 0.12,
+  clusterRadius: 500,
+  depthStrength: 0.7,
+  depthSpacing: 280,
+  pathCenterStrength: 0.1,
+  // Anchor strengths for start/goal position fixing
+  startAnchorStrength: 0.9,
+  goalAnchorStrength: 0.9,
 };
 
 // Category cluster angles (radians) — related categories placed adjacent

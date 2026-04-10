@@ -28,6 +28,8 @@ interface ForceLayoutOptions {
   concurrentGroups?: string[][];
   pathNodeIds?: Set<string>;
   centerNodeId?: string;
+  startNodeId?: string;
+  goalNodeId?: string;
 }
 
 interface SimNode extends SimulationNodeDatum {
@@ -58,7 +60,7 @@ export function computeForceLayout(
   edges: PathEdge[],
   options: ForceLayoutOptions = {}
 ): { nodes: LayoutNode[]; edges: LayoutEdge[] } {
-  const { concurrentGroups = [], pathNodeIds = new Set(), centerNodeId } = options;
+  const { concurrentGroups = [], pathNodeIds = new Set(), centerNodeId, startNodeId, goalNodeId } = options;
   const config = FORCE_LAYOUT_CONFIG;
 
   // Step 1: Build depth map from concurrent_groups
@@ -181,6 +183,31 @@ export function computeForceLayout(
       forceX<SimNode>(0).strength((d) =>
         d.isOnPath ? config.pathCenterStrength : 0
       )
+    )
+    // Anchor start node to top, goal node to bottom
+    .force(
+      "startGoalY",
+      forceY<SimNode>((d) => {
+        if (startNodeId && d.id === startNodeId) return -config.depthSpacing * 0.5;
+        if (goalNodeId && d.id === goalNodeId) {
+          const maxDepth = Math.max(...simNodes.map((n) => n.depth), 3);
+          return maxDepth * config.depthSpacing + config.depthSpacing * 0.5;
+        }
+        return d.depth * config.depthSpacing;
+      }).strength((d) => {
+        if (startNodeId && d.id === startNodeId) return config.startAnchorStrength;
+        if (goalNodeId && d.id === goalNodeId) return config.goalAnchorStrength;
+        return 0;
+      })
+    )
+    // Anchor start/goal to center X
+    .force(
+      "startGoalX",
+      forceX<SimNode>(0).strength((d) => {
+        if (startNodeId && d.id === startNodeId) return 0.8;
+        if (goalNodeId && d.id === goalNodeId) return 0.8;
+        return 0;
+      })
     )
     .alphaDecay(config.alphaDecay)
     .velocityDecay(config.velocityDecay)

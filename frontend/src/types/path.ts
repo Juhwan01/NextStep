@@ -36,6 +36,7 @@ export interface PathMetadata {
   path_type: "fast_track" | "fundamentals";
   job_title: string;
   concurrent_groups: string[][];
+  goal_node_id?: string;
 }
 
 export interface GeneratedPath {

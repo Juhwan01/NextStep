@@ -24,10 +24,10 @@ export function HeroSection() {
           </span>
         </h1>
         <p className="text-xl md:text-2xl text-white/60 mb-2">
-          AI가 설계하는 나만의 학습 경로
+          나만의 학습 여정을 시작하세요
         </p>
         <p className="text-base text-white/40 max-w-xl mx-auto">
-          목표 직무를 입력하면, AI가 현재 수준에 맞는 최적의 학습 로드맵을 생성합니다
+          목표를 알려주세요. 지금 있는 곳에서 원하는 곳까지, 최적의 길을 함께 찾아드릴게요
         </p>
       </motion.div>
     </div>

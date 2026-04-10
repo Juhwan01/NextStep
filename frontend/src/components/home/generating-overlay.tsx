@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const STEPS = [
-  { message: "AI가 직무를 분석하고 있어요", icon: "🔍", duration: 4000 },
-  { message: "필요한 기술을 파악하고 있어요", icon: "🧩", duration: 5000 },
-  { message: "기술 관계를 탐색하고 있어요", icon: "🔗", duration: 5000 },
-  { message: "현재 수준을 평가하고 있어요", icon: "📊", duration: 4000 },
-  { message: "최적의 학습 경로를 설계하고 있어요", icon: "🗺️", duration: 6000 },
-  { message: "거의 완료되었어요!", icon: "✨", duration: 10000 },
+  { message: "목적지를 확인하고 있어요", icon: "🧭", duration: 4000 },
+  { message: "필요한 기술들을 모으는 중이에요", icon: "🎒", duration: 5000 },
+  { message: "기술들 사이의 길을 찾고 있어요", icon: "🛤️", duration: 5000 },
+  { message: "현재 위치에서 출발점을 잡고 있어요", icon: "📍", duration: 4000 },
+  { message: "당신만의 학습 지도를 그리는 중이에요", icon: "🗺️", duration: 6000 },
+  { message: "거의 다 됐어요! 곧 출발합니다", icon: "✨", duration: 10000 },
 ];
 
 export function GeneratingOverlay() {
@@ -76,7 +76,7 @@ export function GeneratingOverlay() {
         </AnimatePresence>
 
         <p className="text-sm text-white/30 mb-6">
-          AI가 최적의 학습 경로를 설계하고 있습니다
+          잠시만 기다려 주세요, 멋진 여정이 준비되고 있어요
         </p>
 
         {/* Progress bar */}
