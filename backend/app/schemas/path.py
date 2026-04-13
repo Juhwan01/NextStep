@@ -2,12 +2,12 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PathGenerateRequest(BaseModel):
-    job_input: str
-    current_state: str
+    job_input: str = Field(min_length=1, max_length=200)
+    current_state: str = Field(min_length=1, max_length=2000)
 
 
 class PathNode(BaseModel):

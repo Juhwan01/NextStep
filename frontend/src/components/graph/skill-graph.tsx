@@ -162,6 +162,9 @@ function SkillGraphInner({ dualPath, pathId, initialProgress = {} }: SkillGraphP
       return;
     }
 
+    // Capture previous status for rollback on failure
+    const previousStatus = progress[nodeId];
+
     // Optimistic update — delete key for "not_started" so recommended_next logic works
     if (newStatus === "not_started") {
       setProgress((prev) => {
@@ -210,12 +213,20 @@ function SkillGraphInner({ dualPath, pathId, initialProgress = {} }: SkillGraphP
     try {
       await pathApi.updateProgress(pathId, nodeId, newStatus);
     } catch {
-      // Revert on failure
+      // Revert to previous status on failure
       setProgress((prev) => {
         const reverted = { ...prev };
-        delete reverted[nodeId];
+        if (previousStatus) {
+          reverted[nodeId] = previousStatus;
+        } else {
+          delete reverted[nodeId];
+        }
         return reverted;
       });
+      // Revert selected node status
+      setSelectedNode((prev) =>
+        prev && prev.id === nodeId ? { ...prev, status: previousStatus || "not_started" } : prev
+      );
     }
   }, [pathId, currentPath.nodes, progress, zoomToNode]);
 

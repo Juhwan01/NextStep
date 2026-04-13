@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { GlassCard } from "@/components/ui";
 import type { PathNode, ProgressStatus } from "@/types/path";
@@ -39,30 +39,39 @@ export function NodeDetailPanel({ node, pathId, onClose, onProgressChange, conne
   const [loading, setLoading] = useState(true);
   const [explanation, setExplanation] = useState(node.explanation);
   const [explanationLoading, setExplanationLoading] = useState(false);
+  const [explanationError, setExplanationError] = useState(false);
+  const explanationFetchedRef = useRef<string | null>(null);
   const categoryStyle = CATEGORY_STYLES[node.category] || { color: "#888", icon: "circle" };
 
   useEffect(() => {
     setExplanation(node.explanation);
+    explanationFetchedRef.current = null;
+    setExplanationError(false);
   }, [node.id, node.explanation]);
 
-  // Lazy load explanation if empty
+  // Lazy load explanation if empty (with fetch guard to prevent infinite loop)
   useEffect(() => {
     const hasExplanation = explanation?.why_needed && explanation.why_needed.length > 0;
-    if (hasExplanation || !pathId) return;
+    if (hasExplanation || !pathId || explanationFetchedRef.current === node.id) return;
 
+    explanationFetchedRef.current = node.id;
     setExplanationLoading(true);
+    setExplanationError(false);
     apiClient
       .get(`/paths/${pathId}/explain/${node.id}`)
       .then((res: any) => {
         setExplanation(res.explanation || {});
       })
       .catch(() => {
-        // silently fail — explanation is optional
+        setExplanationError(true);
       })
       .finally(() => setExplanationLoading(false));
   }, [node.id, pathId, explanation]);
 
+  // Reset content when node changes
   useEffect(() => {
+    setLoading(true);
+    setContents([]);
     async function fetchContent() {
       try {
         const res = await apiClient.get(`/content/by-skill/${node.id}`);
@@ -75,6 +84,15 @@ export function NodeDetailPanel({ node, pathId, onClose, onProgressChange, conne
     }
     fetchContent();
   }, [node.id]);
+
+  // Escape key to close
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
 
   return (
     <AnimatePresence>
@@ -247,6 +265,21 @@ export function NodeDetailPanel({ node, pathId, onClose, onProgressChange, conne
                 <div className="h-4 bg-white/5 rounded animate-pulse w-3/4" />
                 <div className="h-4 bg-white/5 rounded animate-pulse w-1/2" />
               </div>
+            </div>
+          ) : explanationError ? (
+            <div className="mb-6 space-y-2">
+              <h3 className="text-sm font-semibold text-[#00d4ff]">AI 추천 이유</h3>
+              <p className="text-sm text-white/40">설명을 불러오지 못했습니다.</p>
+              <button
+                onClick={() => {
+                  explanationFetchedRef.current = null;
+                  setExplanationError(false);
+                  setExplanation({} as any);
+                }}
+                className="text-xs text-[#00d4ff] hover:text-[#00d4ff]/80 transition-colors"
+              >
+                다시 시도
+              </button>
             </div>
           ) : explanation?.why_needed ? (
             <div className="mb-6 space-y-3">

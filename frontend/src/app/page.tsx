@@ -86,7 +86,7 @@ export default function HomePage() {
         </div>
       )}
       <FeatureSection />
-      {isGenerating && <GeneratingOverlay />}
+      {isGenerating && <GeneratingOverlay onCancel={reset} />}
     </main>
   );
 }

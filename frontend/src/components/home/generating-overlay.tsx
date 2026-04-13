@@ -12,7 +12,11 @@ const STEPS = [
   { message: "거의 다 됐어요! 곧 출발합니다", icon: "✨", duration: 10000 },
 ];
 
-export function GeneratingOverlay() {
+interface GeneratingOverlayProps {
+  onCancel?: () => void;
+}
+
+export function GeneratingOverlay({ onCancel }: GeneratingOverlayProps) {
   const [stepIndex, setStepIndex] = useState(0);
 
   useEffect(() => {
@@ -100,6 +104,16 @@ export function GeneratingOverlay() {
             />
           ))}
         </div>
+
+        {/* Cancel button */}
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            className="mt-6 px-4 py-2 text-sm text-white/30 hover:text-white/60 transition-colors rounded-lg hover:bg-white/5"
+          >
+            취소
+          </button>
+        )}
       </div>
     </motion.div>
   );

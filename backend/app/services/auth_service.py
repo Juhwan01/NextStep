@@ -58,10 +58,17 @@ class AuthService:
         token = self.create_jwt(str(user.id))
         return user, token
 
+    # Dummy hash for constant-time comparison when user not found (prevents timing attack)
+    _DUMMY_HASH = pwd_context.hash("dummy-constant-time-guard")
+
     async def login(self, email: str, password: str) -> tuple[User, str]:
         result = await self.db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
-        if not user or not self.verify_password(password, user.password_hash):
+        if not user:
+            # Run hash comparison anyway to prevent timing-based email enumeration
+            pwd_context.verify(password, self._DUMMY_HASH)
+            raise ValueError("Invalid email or password")
+        if not user.password_hash or not self.verify_password(password, user.password_hash):
             raise ValueError("Invalid email or password")
 
         token = self.create_jwt(str(user.id))

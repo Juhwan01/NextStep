@@ -45,11 +45,39 @@ export default function PathPage({ params }: { params: { id: string } }) {
   }
 
   if (error || !data) {
+    const status = (error as any)?.response?.status;
+    const title = status === 403
+      ? "이 경로에 접근할 수 없습니다"
+      : status === 404
+        ? "경로를 찾을 수 없습니다"
+        : "오류가 발생했습니다";
+    const desc = status === 403
+      ? "이 학습 경로에 대한 접근 권한이 없습니다."
+      : status === 404
+        ? "잘못된 링크이거나 경로가 삭제되었습니다."
+        : "서버와 연결할 수 없습니다. 잠시 후 다시 시도해주세요.";
+
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl text-white mb-2">경로를 찾을 수 없습니다</h2>
-          <p className="text-white/40">잘못된 링크이거나 경로가 삭제되었습니다.</p>
+        <div className="text-center space-y-4">
+          <h2 className="text-xl text-white">{title}</h2>
+          <p className="text-white/40">{desc}</p>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => router.push("/")}
+              className="px-4 py-2 text-sm rounded-lg bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all"
+            >
+              홈으로
+            </button>
+            {status !== 403 && status !== 404 && (
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 text-sm rounded-lg bg-[#00d4ff]/10 text-[#00d4ff] border border-[#00d4ff]/20 hover:bg-[#00d4ff]/20 transition-all"
+              >
+                다시 시도
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );

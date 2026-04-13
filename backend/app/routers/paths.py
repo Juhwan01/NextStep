@@ -145,6 +145,10 @@ async def explain_skill(
     if not user_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Path not found")
 
+    # Authorization: only owner or anonymous paths can be accessed
+    if user_path.user_id and (not user or str(user_path.user_id) != str(user.id)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
     # Find the skill name from path_data
     skill_name = None
     job_title = ""

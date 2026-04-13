@@ -31,6 +31,9 @@ export function JobInputForm({ onSubmit, isLoading = false }: JobInputFormProps)
   const [jobInput, setJobInput] = useState("");
   const [currentState, setCurrentState] = useState("");
 
+  const JOB_INPUT_MAX = 100;
+  const STATE_INPUT_MAX = 1000;
+
   const handleNext = () => {
     if (jobInput.trim()) {
       setStep(2);
@@ -156,11 +159,17 @@ export function JobInputForm({ onSubmit, isLoading = false }: JobInputFormProps)
                 <Input
                   placeholder="예: 백엔드 개발자, 데이터 사이언티스트..."
                   value={jobInput}
-                  onChange={(e) => setJobInput(e.target.value)}
+                  onChange={(e) => setJobInput(e.target.value.slice(0, JOB_INPUT_MAX))}
                   onKeyDown={handleKeyDown}
+                  maxLength={JOB_INPUT_MAX}
                   autoFocus
                 />
-                <p className="text-xs text-white/30">직무, 되고 싶은 모습, 뭐든 좋아요</p>
+                <div className="flex justify-between">
+                  <p className="text-xs text-white/30">직무, 되고 싶은 모습, 뭐든 좋아요</p>
+                  <p className={`text-xs ${jobInput.length >= JOB_INPUT_MAX ? "text-red-400" : "text-white/20"}`}>
+                    {jobInput.length}/{JOB_INPUT_MAX}
+                  </p>
+                </div>
 
                 {/* Suggestion chips */}
                 <motion.div
@@ -246,12 +255,17 @@ export function JobInputForm({ onSubmit, isLoading = false }: JobInputFormProps)
                 <Textarea
                   placeholder="예: Python 기초를 배웠고, SQL은 간단한 쿼리 정도 할 수 있습니다."
                   value={currentState}
-                  onChange={(e) => setCurrentState(e.target.value)}
-                  onKeyDown={handleKeyDown}
+                  onChange={(e) => setCurrentState(e.target.value.slice(0, STATE_INPUT_MAX))}
                   rows={4}
+                  maxLength={STATE_INPUT_MAX}
                   autoFocus
                 />
-                <p className="text-xs text-white/30">괜찮아요, 어디서든 시작할 수 있어요. 편하게 적어주세요.</p>
+                <div className="flex justify-between">
+                  <p className="text-xs text-white/30">괜찮아요, 어디서든 시작할 수 있어요. 편하게 적어주세요.</p>
+                  <p className={`text-xs ${currentState.length >= STATE_INPUT_MAX ? "text-red-400" : "text-white/20"}`}>
+                    {currentState.length}/{STATE_INPUT_MAX}
+                  </p>
+                </div>
 
                 {/* State suggestion chips */}
                 <div className="flex flex-wrap gap-2 pt-1">
